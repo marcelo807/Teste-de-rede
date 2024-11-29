@@ -1,0 +1,82 @@
+import subprocess
+import re
+
+def scan_networks():
+    """Escaneia redes disponíveis e retorna os SSIDs encontrados."""
+    result = subprocess.run(['netsh', 'wlan', 'show', 'network'], capture_output=True, text=True)
+    networks = re.findall(r'SSID \d+ : (.+)', result.stdout)
+    return networks
+
+def create_network_profile(ssid, pin):
+    """Cria um perfil de rede XML para a rede Wi-Fi."""
+    profile = f"""
+<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
+    <name>{ssid}</name>
+    <SSIDConfig>
+        <SSID>
+            <name>{ssid}</name>
+        </SSID>
+    </SSIDConfig>
+    <connectionType>ESS</connectionType>
+    <connectionMode>manual</connectionMode>
+    <MSM>
+        <security>
+            <authEncryption>
+                <authentication>WPA2PSK</authentication>
+                <encryption>AES</encryption>
+                <useOneX>false</useOneX>
+            </authEncryption>
+            <sharedKey>
+                <keyMaterial>{pin}</keyMaterial>
+            </sharedKey>
+        </security>
+    </MSM>
+</WLANProfile>
+    """
+    # Salvar o perfil em um arquivo
+    profile_path = f"{ssid}_profile.xml"
+    with open(profile_path, "w") as file:
+        file.write(profile)
+    return profile_path
+
+def delete_existing_profile(ssid):
+    """Remove o perfil existente, se houver."""
+    subprocess.run(["netsh", "wlan", "delete", "profile", f"name={ssid}"], shell=True)
+
+def connect_to_network(ssid, pin):
+    """Cria um perfil e tenta conectar à rede Wi-Fi."""
+    # Antes de criar um novo perfil, vamos remover qualquer perfil existente
+    delete_existing_profile(ssid)
+    
+    # Criar o perfil de rede
+    profile_path = create_network_profile(ssid, pin)
+    
+    # Adicionar o perfil ao sistema
+    subprocess.run(["netsh", "wlan", "add", "profile", f"filename={profile_path}"], shell=True)
+
+    # Tentar conectar
+    result = subprocess.run(["netsh", "wlan", "connect", f"name={ssid}"], capture_output=True, text=True, shell=True)
+    print(result.stdout)
+    if "conexão estabelecida" in result.stdout.lower():
+        print(f"[SUCESSO] Conexão estabelecida com o PIN: {pin}")
+        return True
+    else:
+        print("[FALHA] Não foi possível conectar.")
+        return False
+
+# Fluxo Principal
+print("Escaneando redes disponíveis...")
+networks = scan_networks()
+print("Redes encontradas:")
+for idx, network in enumerate(networks):
+    print(f"{idx + 1}. {network}")
+
+# Selecionar a rede
+choice = int(input("Selecione o número da rede de teste: ")) - 1
+if 0 <= choice < len(networks):
+    selected_network = networks[choice]
+    print(f"Rede selecionada: {selected_network}")
+    pin = "12345670"  # Exemplo de PIN
+    connect_to_network(selected_network, pin)
+else:
+    print("Seleção inválida.")
